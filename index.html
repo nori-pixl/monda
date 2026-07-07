@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title></title>
+<title>べんきょう街づくり(ブラウザAI版)</title>
 <style>
   :root{
     --bg:#fdf6e3; --card:#ffffff; --accent:#ff8c42; --accent-dark:#e06b1f;
@@ -98,6 +98,8 @@
     font-size:0.9rem; color:#7a5b2e; margin-bottom:10px; line-height:1.6; animation:fadeSlide .3s ease;
   }
   .explain-box b{ color:var(--accent-dark); }
+  ruby{ ruby-align:center; }
+  rt{ color:var(--accent-dark); font-size:0.6em; user-select:none; }
   .ai-tag{
     display:inline-block; font-size:0.68rem; background:var(--blue); color:#fff;
     padding:2px 7px; border-radius:8px; margin-left:6px; vertical-align:middle;
@@ -172,25 +174,18 @@
 <body>
 
 <header>
-  
   <div class="header-top">
-    
-				
-    <div class="title">nameBy nori-pixl　|　街問題ゲーム <br><br>開発バージョン ベータ 5.0 2026/07/03 16:46 更新</div>
-				
+    <div class="title">べんきょう街づくり</div>
     <div>
-      
       <div class="money-display" id="moneyDisplay">お金: 0円</div>
       <div class="income-note" id="incomeNote"></div>
     </div>
   </div>
   <nav class="tabs">
-    
     <button id="tabStudyBtn" class="active">べんきょう</button>
     <button id="tabTownBtn">まち</button>
   </nav>
 </header>
-  
 
 <div class="container">
 
@@ -198,9 +193,8 @@
     <div class="card">
       <div class="section-title">きょうかをえらぶ</div>
       <div class="choice-grid" id="subjectSelect"></div>
-      <div class="note-text">算数はこのアプリの中で計算して出題します。国語・社会・理科はブラウザの中で動くAI(transformers.js / Qwen2.5-0.5B)がその場で問題文を作ります。</div>
+      <div class="note-text">算数はこのアプリの中で計算して出題します。国語・社会・理科はブラウザの中で動くAI(wllama / Qwen2.5-0.5B-Instruct・GGUF形式)がその場で問題文を作ります。Claudeとは無関係の仕組みです。安定性を優先しているため、AIをつかうたびにモデルのダウンロードが発生します(数十秒ほどかかります)。</div>
     </div>
-    
     <div class="card">
       <div class="section-title">がくねんをえらぶ</div>
       <div class="choice-grid grade-grid" id="gradeSelect"></div>
@@ -249,6 +243,9 @@
     <button class="main-btn next-btn" id="goTownBtn">まちへ行く</button>
   </div>
 
+  <div id="debugBox" class="error-box hidden" style="position:sticky; bottom:8px; word-break:break-all; text-align:left; font-family:monospace; font-size:0.72rem;"></div>
+  <button id="aiResetBtn" class="main-btn hidden" style="background:#999; margin-top:6px;">AIをリセットする(こおりついた時はこちら)</button>
+
   <div id="townSection" class="hidden">
     <div class="card">
       <div class="section-title">わたしのまち</div>
@@ -264,8 +261,8 @@
     <div class="card">
       <button class="reset-btn" id="resetBtn">セーブデータをリセットする</button>
     </div>
-  </div><hr><br><br><br>
-  <p>&copynori-pixl 2026</p>
+  </div>
+
 </div>
 
 <script type="module">
@@ -432,6 +429,47 @@ function mathGrade6(diff){
 const MATH_GEN = {1:mathGrade1,2:mathGrade2,3:mathGrade3,4:mathGrade4,5:mathGrade5,6:mathGrade6};
 
 /* ============================================================
+   1.5 ふりがな辞書(5年生までに習わない/読みにくい言葉に自動でルビをふる)
+   ============================================================ */
+const FURIGANA_DICT = [
+ ["都道府県","とどうふけん"],["府庁所在地","ふちょうしょざいち"],["道庁所在地","どうちょうしょざいち"],
+ ["工業地帯","こうぎょうちたい"],["貿易","ぼうえき"],["輸入","ゆにゅう"],["輸出","ゆしゅつ"],
+ ["促成栽培","そくせいさいばい"],["抑制栽培","よくせいさいばい"],["高齢化","こうれいか"],["過疎","かそ"],["過密","かみつ"],
+ ["憲法","けんぽう"],["主権","しゅけん"],["尊重","そんちょう"],["三権分立","さんけんぶんりつ"],
+ ["幕府","ばくふ"],["徳川家康","とくがわいえやす"],["織田信長","おだのぶなが"],["豊臣秀吉","とよとみひでよし"],
+ ["聖徳太子","しょうとくたいし"],["卑弥呼","ひみこ"],["邪馬台国","やまたいこく"],["源頼朝","みなもとのよりとも"],
+ ["足利尊氏","あしかがたかうじ"],["大化の改新","たいかのかいしん"],["廃藩置県","はいはんちけん"],
+ ["尊敬語","そんけいご"],["謙譲語","けんじょうご"],["推敲","すいこう"],["対義語","たいぎご"],["述語","じゅつご"],
+ ["修飾語","しゅうしょくご"],["一石二鳥","いっせきにちょう"],["油断大敵","ゆだんたいてき"],["七転び八起き","ななころびやおき"],
+ ["馬耳東風","ばじとうふう"],["四苦八苦","しくはっく"],["日進月歩","にっしんげっぽ"],["臨機応変","りんきおうへん"],
+ ["以心伝心","いしんでんしん"],["五十歩百歩","ごじっぽひゃっぽ"],["杞憂","きゆう"],["矛盾","むじゅん"],["蛇足","だそく"],
+ ["危機一髪","ききいっぱつ"],["大器晩成","たいきばんせい"],["有終の美","ゆうしゅうのび"],["臥薪嘗胆","がしんしょうたん"],
+ ["呉越同舟","ごえつどうしゅう"],["破天荒","はてんこう"],["言語道断","ごんごどうだん"],["灯台下暗し","とうだいもとくらし"],
+ ["馬の耳に念仏","うまのみみにねんぶつ"],["著しい","いちじるしい"],["率直","そっちょく"],["憶測","おくそく"],
+ ["便乗","びんじょう"],["簡潔","かんけつ"],["柔軟","じゅうなん"],["潔い","いさぎよい"],["潔白","けっぱく"],
+ ["厳粛","げんしゅく"],["洗練","せんれん"],["顕著","けんちょ"],["概念","がいねん"],["客観的","きゃっかんてき"],
+ ["抽象的","ちゅうしょうてき"],["妥協","だきょう"],["暫定的","ざんていてき"],["示唆","しさ"],["一朝一夕","いっちょういっせき"],
+ ["心臓","しんぞう"],["消化","しょうか"],["呼吸","こきゅう"],["血液","けつえき"],["動脈","どうみゃく"],["静脈","じょうみゃく"],
+ ["胃","い"],["肝臓","かんぞう"],["小腸","しょうちょう"],["だ液","だえき"],["塩酸","えんさん"],["水溶液","すいようえき"],
+ ["酸性","さんせい"],["中性","ちゅうせい"],["リトマス紙","リトマスし"],["発芽","はつが"],["養殖","ようしょく"],
+ ["栽培漁業","さいばいぎょぎょう"],["台風","たいふう"],["磁石","じしゃく"],["電磁石","でんじしゃく"],["回路","かいろ"],
+ ["直列","ちょくれつ"],["並列","へいれつ"],["地層","ちそう"],["火成岩","かせいがん"],["月食","げっしょく"],["日食","にっしょく"],
+ ["国際連合","こくさいれんごう"],["裁判所","さいばんしょ"],["内閣","ないかく"],["立法権","りっぽうけん"],["行政権","ぎょうせいけん"],
+ ["司法権","しほうけん"]
+];
+FURIGANA_DICT.sort((a,b) => b[0].length - a[0].length);
+
+function applyFurigana(text){
+  if(typeof text !== 'string') return text;
+  let result = text;
+  for(const [word, reading] of FURIGANA_DICT){
+    if(result.indexOf(word) === -1) continue;
+    result = result.split(word).join(`<ruby>${word}<rt>${reading}</rt></ruby>`);
+  }
+  return result;
+}
+
+/* ============================================================
    2. 予備の問題(ブラウザAIが失敗した時だけ使う保険。各学年3問)
    ============================================================ */
 const FALLBACK_QBANK = {
@@ -498,35 +536,114 @@ science:{
 };
 
 /* ============================================================
-   3. transformers.js によるブラウザ内AI(Claudeとは無関係)
+   3. wllama(llama.cppをWASM化したライブラリ)によるブラウザ内AI
+      transformers.jsとは別系統のライブラリ。Claudeとは無関係。
    ============================================================ */
-let aiPipelinePromise = null;
+let aiInstancePromise = null;
+let currentWllamaInstance = null;
+let aiCleanupChain = Promise.resolve();
+let aiFailCount = 0;
+let aiDisabled = false;
 const loadingBarOuter = document.getElementById('loadingBarOuter');
 const loadingBarInner = document.getElementById('loadingBarInner');
 const loadingText = document.getElementById('loadingText');
 
-async function ensureAIPipeline(){
-  if(aiPipelinePromise) return aiPipelinePromise;
-  aiPipelinePromise = (async () => {
-    const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.2.4');
+const WLLAMA_BASE = 'https://cdn.jsdelivr.net/npm/@wllama/wllama@2.3.4/esm';
+const MODEL_URL = 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf';
+
+// wllamaインスタンスを安全に後片付けする(OPFSのアクセスハンドルを解放する)
+async function destroyWllama(instance){
+  if(!instance) return;
+  try{
+    if(typeof instance.exit === 'function'){ await instance.exit(); }
+    else if(typeof instance.unload === 'function'){ await instance.unload(); }
+  }catch(e){
+    console.warn('wllamaインスタンスの後片付けでエラー(無視して続行します):', e);
+  }
+}
+
+// パイプラインを破棄する。まだ裏で動いているかもしれない読み込み処理(pendingLoad)がある場合は、
+// それが終わってからインスタンスを閉じるようにチェーンをつなぐ。
+// これにより「古いインスタンスがOPFSのファイルを開いたまま、新しいインスタンスが同じファイルを
+// 開こうとして衝突する」問題を防ぐ。
+function resetAIPipeline(pendingLoad){
+  const instanceToKill = currentWllamaInstance;
+  currentWllamaInstance = null;
+  aiInstancePromise = null;
+  aiCleanupChain = aiCleanupChain.then(async () => {
+    if(pendingLoad){
+      try{ await pendingLoad; }catch(_e){ /* 想定内の失敗はここでは無視 */ }
+    }
+    await destroyWllama(instanceToKill);
+  });
+}
+
+function ensureAIPipeline(){
+  if(aiInstancePromise) return aiInstancePromise;
+
+  aiInstancePromise = aiCleanupChain.then(async () => {
+    let Wllama;
+    try{
+      ({ Wllama } = await import(`${WLLAMA_BASE}/index.js`));
+    }catch(e){
+      throw new Error('[モジュール読み込みエラー] wllamaを取得できませんでした: ' + (e && e.message ? e.message : e));
+    }
+
     loadingBarOuter.classList.remove('hidden');
-    const generator = await pipeline(
-      'text-generation',
-      'onnx-community/Qwen2.5-0.5B-Instruct',
-      {
-        dtype: 'q4',
-        progress_callback: (p) => {
-          if(p && p.status === 'progress' && typeof p.progress === 'number'){
-            loadingBarInner.style.width = Math.round(p.progress) + '%';
-            loadingText.textContent = `AIモデルをダウンロード中… ${Math.round(p.progress)}%(初回だけです)`;
-          }
+
+    // 一部の(サンドボックス化された)公開ホスティング環境では、console.debugなど
+    // 一部のconsoleメソッドが欠けていることがある。wllamaはデフォルトでlogger:consoleを
+    // 使い内部でlogger.debug(...)を呼ぶため、欠けていると"logger.debug is not a function"
+    // というエラーになる。環境のconsoleに依存しない、安全なlogger を自前で用意する。
+    const safeLogger = {
+      debug: (...args) => { try{ if(typeof console.debug==='function') console.debug(...args); }catch(_e){} },
+      log:   (...args) => { try{ if(typeof console.log==='function') console.log(...args); }catch(_e){} },
+      warn:  (...args) => { try{ if(typeof console.warn==='function') console.warn(...args); }catch(_e){} },
+      error: (...args) => { try{ if(typeof console.error==='function') console.error(...args); }catch(_e){} },
+    };
+
+    const wllama = new Wllama({
+      'single-thread/wllama.wasm': `${WLLAMA_BASE}/single-thread/wllama.wasm`,
+      'multi-thread/wllama.wasm': `${WLLAMA_BASE}/multi-thread/wllama.wasm`,
+    }, {
+      logger: safeLogger,
+    });
+
+    const loadPromise = wllama.loadModelFromUrl(MODEL_URL, {
+      n_ctx: 1024,
+      n_threads: 1,
+      // useCache:false = OPFS(ブラウザ内の仮想ファイルシステム)を使わず、毎回メモリに直接ロードする。
+      // 公開ホスティング環境ではOPFSのアクセスハンドルまわりで不具合が起きやすいため、
+      // 「初回だけ速いが不安定」より「毎回同じ時間がかかるが安定」を優先する。
+      useCache: false,
+      progressCallback: (p) => {
+        if(p && typeof p.loaded === 'number' && typeof p.total === 'number' && p.total > 0){
+          const pct = Math.round((p.loaded / p.total) * 100);
+          loadingBarInner.style.width = pct + '%';
+          loadingText.textContent = `AIモデルをダウンロード中… ${pct}%`;
         }
       }
-    );
+    });
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('モデルの初期化が60秒以上たっても終わりません(タイムアウト)')), 60000);
+    });
+
+    try{
+      await Promise.race([loadPromise, timeoutPromise]);
+    }catch(e){
+      // タイムアウトなどでここに来た場合、loadPromise自体は裏で動き続けている可能性がある。
+      // 次にensureAIPipeline()が呼ばれた時、まだ片付いていないインスタンスと衝突しないよう、
+      // 「loadPromiseの決着 → インスタンスのexit()」が終わるまで次の読み込みを待たせる。
+      resetAIPipeline(loadPromise);
+      throw new Error('[モデル読み込みエラー] ' + (e && e.message ? e.message : e));
+    }
+
     loadingBarOuter.classList.add('hidden');
-    return generator;
-  })();
-  return aiPipelinePromise;
+    currentWllamaInstance = wllama;
+    return wllama;
+  });
+
+  return aiInstancePromise;
 }
 
 function extractJsonObject(text){
@@ -546,7 +663,7 @@ async function generateAIQuestion(subject, grade, diff){
   const diffLabel = DIFF_LABELS[diff];
   const nChoices = diff===1 ? 2 : 4;
 
-  const promptText =
+  const userPrompt =
 `あなたは日本の小学校の先生です。小学${grade}年生・難易度「${diffLabel}」にあわせた「${subjectLabel}」の4択クイズを1問作ってください。
 正しい情報だけを使い、学年にあった内容にしてください。
 次のJSON形式だけを出力してください。前置き・説明・コードブロックは禁止です。
@@ -555,16 +672,26 @@ async function generateAIQuestion(subject, grade, diff){
 
 correctは正しい選択肢のインデックス(0から3の数字)です。`;
 
-  const generator = await ensureAIPipeline();
-  const messages = [{ role: 'user', content: promptText }];
-  const output = await generator(messages, { max_new_tokens: 220, temperature: 0.85, do_sample: true });
+  // Qwen系のChatMLテンプレートを手動で組み立てる
+  const chatPrompt = `<|im_start|>user\n${userPrompt}<|im_end|>\n<|im_start|>assistant\n`;
 
+  const wllama = await ensureAIPipeline();
   let replyText = '';
-  const gen = output && output[0] ? output[0].generated_text : null;
-  if(Array.isArray(gen)){
-    replyText = gen[gen.length-1].content || '';
-  } else if(typeof gen === 'string'){
-    replyText = gen;
+  try{
+    if(typeof wllama.createChatCompletion === 'function'){
+      replyText = await wllama.createChatCompletion(
+        [{ role: 'user', content: userPrompt }],
+        { nPredict: 200, sampling: { temp: 0.8 } }
+      );
+    } else {
+      replyText = await wllama.createCompletion(chatPrompt, {
+        nPredict: 200,
+        sampling: { temp: 0.8 },
+        stopTokens: ['<|im_end|>']
+      });
+    }
+  }catch(e){
+    throw new Error('[生成エラー] ' + (e && e.message ? e.message : e));
   }
 
   const obj = extractJsonObject(replyText);
@@ -613,18 +740,70 @@ async function getNextProblem(subject, grade, diff){
     const p = MATH_GEN[grade](diff);
     return { mode:'text', text:p.text, answer:p.answer, checkType:p.checkType||'number', explain:p.explain, isAI:false };
   }
+  if(aiDisabled){
+    return getFallbackQuestion(subject, grade, diff);
+  }
   loadingText.textContent = `AI(ブラウザ内モデル)が${SUBJECT_LABELS[subject]}のもんだいを考え中…`;
   let lastErr = null;
   for(let attempt=0; attempt<2; attempt++){
     try{
-      return await generateAIQuestion(subject, grade, diff);
+      const q = await generateAIQuestion(subject, grade, diff);
+      aiFailCount = 0;
+      return q;
     }catch(e){
       lastErr = e;
+      // 生成に失敗したインスタンスは壊れている可能性があるので、
+      // 後片付けをしてから次のattempt(またはは次回の呼び出し)でクリーンに作り直す。
+      resetAIPipeline();
     }
   }
   console.warn('AI生成に失敗したため予備の問題を使います:', lastErr);
+  const debugBox = document.getElementById('debugBox');
+  if(debugBox && lastErr){
+    debugBox.textContent = 'AIエラー詳細: ' + (lastErr.message || String(lastErr));
+    debugBox.classList.remove('hidden');
+  }
+  document.getElementById('aiResetBtn').classList.remove('hidden');
+  aiFailCount++;
+  if(aiFailCount >= 2 && !aiDisabled){
+    aiDisabled = true;
+    showToast('この端末ではAI生成が不安定なため、予備の問題に切り替えました');
+  }
   return getFallbackQuestion(subject, grade, diff);
 }
+
+// 「AIをリセットする」ボタン: 手動でパイプラインを完全に作り直す救済手段。
+// OPFSキャッシュ自体が壊れているケースに備えて、可能ならキャッシュも削除する。
+async function manualAIReset(){
+  const btn = document.getElementById('aiResetBtn');
+  btn.disabled = true;
+  btn.textContent = 'リセット中…';
+  resetAIPipeline();
+  try{ await aiCleanupChain; }catch(_e){}
+
+  // OPFS上のキャッシュファイルを可能な範囲で削除しておく(次回ロード時の衝突予防)
+  try{
+    if(navigator.storage && navigator.storage.getDirectory){
+      const root = await navigator.storage.getDirectory();
+      if(root.keys){
+        for await (const name of root.keys()){
+          try{ await root.removeEntry(name, { recursive: true }); }catch(_e){}
+        }
+      }
+    }
+  }catch(_e){
+    console.warn('OPFSキャッシュの削除に失敗しました(無視します):', _e);
+  }
+
+  aiDisabled = false;
+  aiFailCount = 0;
+  btn.disabled = false;
+  btn.textContent = 'AIをリセットする(こおりついた時はこちら)';
+  btn.classList.add('hidden');
+  document.getElementById('debugBox').classList.add('hidden');
+  showToast('AIをリセットしました。次の問題からもう一度ためします');
+}
+document.getElementById('aiResetBtn').addEventListener('click', manualAIReset);
 
 /* ============================================================
    4. 街づくり: 建物データ
@@ -861,7 +1040,7 @@ function showProblem(){
   problemWrap.classList.add('problem-wrap');
 
   const tagHtml = p.isAI ? '<span class="ai-tag">AI生成</span>' : (selectedSubject!=='math' ? '<span class="ai-tag fallback-tag">予備の問題</span>' : '');
-  problemText.innerHTML = p.text.replace(/</g,'&lt;') + tagHtml;
+  problemText.innerHTML = applyFurigana(p.text.replace(/</g,'&lt;')) + tagHtml;
 
   feedback.textContent = '';
   feedback.className = 'feedback';
@@ -878,7 +1057,7 @@ function showProblem(){
     p.choices.forEach(choice => {
       const b = document.createElement('button');
       b.className = 'mc-btn';
-      b.textContent = choice;
+      b.innerHTML = applyFurigana(String(choice).replace(/</g,'&lt;'));
       b.addEventListener('click', () => selectMcChoice(b, choice));
       mcGrid.appendChild(b);
     });
@@ -1163,11 +1342,43 @@ setInterval(() => {
   }
 }, 1000);
 setInterval(() => { persistSave(); }, 5000);
-window.addEventListener('beforeunload', () => { SAVE.lastUpdate = Date.now(); persistSave(); });
+window.addEventListener('beforeunload', () => {
+  SAVE.lastUpdate = Date.now(); persistSave();
+  // ページ離脱時、可能な範囲でwllamaインスタンスを閉じてOPFSのロックを残さないようにする
+  if(currentWllamaInstance && typeof currentWllamaInstance.exit === 'function'){
+    try{ currentWllamaInstance.exit(); }catch(e){}
+  }
+});
 
 /* ============================================================
    12. 初期化
    ============================================================ */
+window.addEventListener('unhandledrejection', (ev) => {
+  const msg = (ev && ev.reason && ev.reason.message) ? ev.reason.message : String(ev.reason||'');
+  console.warn('unhandledrejection:', msg);
+  const debugBox = document.getElementById('debugBox');
+  if(debugBox){
+    debugBox.textContent = 'AIエラー詳細(unhandledrejection): ' + msg;
+    debugBox.classList.remove('hidden');
+  }
+  document.getElementById('aiResetBtn').classList.remove('hidden');
+  if(!aiDisabled){
+    aiDisabled = true;
+    resetAIPipeline();
+    showToast('AI機能でエラーが起きたため、予備の問題に切り替えました');
+  }
+});
+
+window.addEventListener('error', (ev) => {
+  const msg = ev && ev.message ? ev.message : String(ev);
+  console.warn('window error:', msg);
+  const debugBox = document.getElementById('debugBox');
+  if(debugBox){
+    debugBox.textContent = 'AIエラー詳細(window error): ' + msg;
+    debugBox.classList.remove('hidden');
+  }
+});
+
 applyOfflineIncome();
 renderSubjectButtons();
 renderGradeButtons();
